@@ -42,7 +42,9 @@ credentials.json
 *.pem
 *.key
 .credentials
-# video_encoding_explained.md
-# interview_concepts.md
-# resume.tex
+VIDEO_ENCODING_EXPLAINED.md
+INTERVIEW_CONCEPTS.md
+resume.tex
+memory/
+test_reports/
 
