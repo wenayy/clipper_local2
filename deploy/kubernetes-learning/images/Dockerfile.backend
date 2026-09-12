@@ -26,6 +26,15 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # requirements layer (a stale yt-dlp is itself a common "bot" failure).
 RUN pip install --no-cache-dir -U yt-dlp
 
+# Having a JS runtime (Deno) is not enough on its own: yt-dlp also needs its EJS
+# "challenge solver" script to solve YouTube's signature and "n" (anti-throttle)
+# challenges. It fetches that script from GitHub on first use and runs it with
+# Deno. Enable it -- and point the cache at /tmp -- for EVERY yt-dlp call via the
+# system config file (the app runs yt-dlp without --ignore-config, so it reads
+# this). Without this, downloads are throttled/blocked even with Deno present.
+RUN printf '%s\n' '--remote-components ejs:github' '--cache-dir /tmp/yt-dlp-cache' \
+    > /etc/yt-dlp.conf
+
 COPY backend/ /app/
 
 # The Kubernetes pod mounts writable emptyDir volumes on /app/storage and /tmp.
