@@ -193,6 +193,24 @@ def _network_args() -> list:
     return ["--proxy", PROXY] if PROXY else []
 
 
+def _download_args() -> list:
+    """Args every actual DOWNLOAD needs (not metadata/preview).
+
+    The proxy is the important one: without it the download leaves from this
+    server's own (datacenter) IP, which YouTube blocks as a bot -- the proxy is
+    only useful if the bytes actually travel through it. The EJS solver
+    (fetched once, then cached) lets the bundled Deno runtime solve YouTube's
+    signature and "n" anti-throttle challenges so formats are not throttled or
+    missing. --socket-timeout keeps a dead connection from hanging (the worker's
+    stall watchdog is the outer backstop).
+
+    Applied to downloads only, never to preview: preview must stay fast and must
+    not depend on a GitHub fetch, or a slow fetch stalls the whole API.
+    """
+    return [*_network_args(), "--remote-components", "ejs:github",
+            "--socket-timeout", "30"]
+
+
 def _client_args(client: str) -> list:
     """Extractor args for one player client, or nothing for yt-dlp's default."""
     if client == "default":
@@ -534,6 +552,7 @@ def download_audio(url: str, out_path: str, on_progress=None) -> str:
                 "--no-playlist",
                 "--force-overwrites",
                 *_cookie_args(),
+                *_download_args(),
                 "-o", raw_path,
                 url,
             ],
@@ -553,6 +572,7 @@ def download_audio(url: str, out_path: str, on_progress=None) -> str:
                 "--no-playlist",
                 "--force-overwrites",
                 *_cookie_args(),
+                *_download_args(),
                 "-o", raw_path,
                 url,
             ],
@@ -591,6 +611,7 @@ def download_video(url: str, out_path: str, on_progress=None,
                 "--no-playlist",
                 "--force-overwrites",
                 *_cookie_args(),
+                *_download_args(),
                 "-o", out_path,
                 url,
             ],
@@ -613,6 +634,7 @@ def download_video(url: str, out_path: str, on_progress=None,
             "--no-playlist",
             "--force-overwrites",
             *_cookie_args(),
+            *_download_args(),
             "-o", out_path,
             url,
         ],

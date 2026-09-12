@@ -13,7 +13,10 @@ RUN apt-get update \
 # official image. DENO_DIR points at /tmp because the app runs as a home-less
 # non-root user and Deno needs a writable cache dir.
 COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
-ENV DENO_DIR=/tmp/deno
+# Deno and yt-dlp both need a writable cache, but the app runs as a home-less
+# non-root user -- point both at /tmp.
+ENV DENO_DIR=/tmp/deno \
+    XDG_CACHE_HOME=/tmp
 
 WORKDIR /app
 
@@ -26,14 +29,11 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 # requirements layer (a stale yt-dlp is itself a common "bot" failure).
 RUN pip install --no-cache-dir -U yt-dlp
 
-# Having a JS runtime (Deno) is not enough on its own: yt-dlp also needs its EJS
-# "challenge solver" script to solve YouTube's signature and "n" (anti-throttle)
-# challenges. It fetches that script from GitHub on first use and runs it with
-# Deno. Enable it -- and point the cache at /tmp -- for EVERY yt-dlp call via the
-# system config file (the app runs yt-dlp without --ignore-config, so it reads
-# this). Without this, downloads are throttled/blocked even with Deno present.
-RUN printf '%s\n' '--remote-components ejs:github' '--cache-dir /tmp/yt-dlp-cache' \
-    > /etc/yt-dlp.conf
+# NOTE: the EJS challenge solver (--remote-components ejs:github) is applied only
+# to the DOWNLOAD commands in app/pipeline/downloader.py, not globally. Enabling
+# it globally made the *preview* call fetch from GitHub and hang, tying up the
+# API. Downloads run in the isolated workers (with a stall watchdog), so scoping
+# it there fixes throttling without risking the API.
 
 COPY backend/ /app/
 
