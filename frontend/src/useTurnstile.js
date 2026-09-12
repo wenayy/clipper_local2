@@ -15,6 +15,11 @@ import { API_BASE } from "./api";
  */
 export default function useTurnstile() {
   const [siteKey, setSiteKey] = useState(null);
+  // Once the check passes we collapse the (bulky) Cloudflare box and show a
+  // small confirmation instead, so it stops dominating the form. The widget
+  // stays mounted -- just hidden -- so getToken() can still reset it for the
+  // next submission.
+  const [verified, setVerified] = useState(false);
   const widgetId = useRef(null);
   const tokenRef = useRef("");
   const resolveRef = useRef(null);
@@ -45,11 +50,12 @@ export default function useTurnstile() {
         sitekey: siteKey,
         callback: (token) => {
           tokenRef.current = token;
+          setVerified(true);
           resolveRef.current?.(token);
           resolveRef.current = null;
         },
-        "expired-callback": () => { tokenRef.current = ""; },
-        "error-callback": () => { tokenRef.current = ""; },
+        "expired-callback": () => { tokenRef.current = ""; setVerified(false); },
+        "error-callback": () => { tokenRef.current = ""; setVerified(false); },
       });
     };
     tryMount();
@@ -79,8 +85,34 @@ export default function useTurnstile() {
   }, [siteKey]);
 
   const Turnstile = useCallback(
-    (props) => (siteKey ? createElement("div", { ref: attach, ...props }) : null),
-    [siteKey, attach],
+    (props) => {
+      if (!siteKey) return null;
+      return createElement(
+        "div",
+        props,
+        // The actual widget: kept mounted, but collapsed once verified so the
+        // big Cloudflare box disappears without unmounting (reset still works).
+        createElement("div", {
+          ref: attach,
+          style: verified ? { height: 0, overflow: "hidden" } : undefined,
+        }),
+        // Subtle replacement shown after the check passes.
+        verified
+          ? createElement(
+              "div",
+              {
+                style: {
+                  display: "flex", alignItems: "center", gap: "6px",
+                  fontSize: "13px", color: "#22c55e", opacity: 0.9,
+                },
+              },
+              createElement("span", { "aria-hidden": "true" }, "✓"),
+              "Verified — you're human",
+            )
+          : null,
+      );
+    },
+    [siteKey, attach, verified],
   );
 
   return { getToken, Turnstile };
