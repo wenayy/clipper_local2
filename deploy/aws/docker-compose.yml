@@ -70,8 +70,13 @@ services:
     restart: unless-stopped
     ports:
       - "80:8080"
+      - "443:8443"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Cloudflare Origin Certificate, so the box serves real HTTPS and the whole
+      # Cloudflare zone can stay on Full (strict). Create these two files first
+      # (see deploy README) -- the container will not start without them.
+      - ./certs:/etc/nginx/certs:ro
     depends_on:
       - api
 
