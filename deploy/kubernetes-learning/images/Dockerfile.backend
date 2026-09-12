@@ -6,11 +6,25 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
+# YouTube now makes yt-dlp execute JavaScript (the "nsig"/signature challenge) to
+# unlock the real media URLs. Without a JS runtime yt-dlp cannot solve it and
+# YouTube answers "confirm you're not a bot" -- even through a residential proxy.
+# Deno is yt-dlp's default runtime; copy the single static binary from the
+# official image. DENO_DIR points at /tmp because the app runs as a home-less
+# non-root user and Deno needs a writable cache dir.
+COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
+ENV DENO_DIR=/tmp/deno
+
 WORKDIR /app
 
 # Dependency layer changes less often than application code.
 COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# YouTube's extractor changes constantly and the fix always ships as a new yt-dlp
+# release, so force the latest on every build rather than trusting the cached
+# requirements layer (a stale yt-dlp is itself a common "bot" failure).
+RUN pip install --no-cache-dir -U yt-dlp
 
 COPY backend/ /app/
 
