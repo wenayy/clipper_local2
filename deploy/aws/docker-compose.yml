@@ -59,5 +59,21 @@ services:
       db:
         condition: service_healthy
 
+  # Serves the React build AND reverse-proxies /api to the backend, so the whole
+  # app is one origin on port 80. The frontend build defaults API_BASE to /api,
+  # which nginx.conf routes to the api container -- no VITE_API_BASE needed.
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deploy/kubernetes-learning/images/Dockerfile.frontend
+    image: klipcut-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "80:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
 volumes:
   pgdata:
