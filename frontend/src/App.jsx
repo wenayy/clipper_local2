@@ -550,7 +550,7 @@ export default function App() {
   const [studioOpen, setStudioOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef(null);
-  const { getToken: getTurnstileToken } = useTurnstile();
+  const { getToken: getTurnstileToken, Turnstile } = useTurnstile();
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -1179,6 +1179,12 @@ export default function App() {
                 </div>
               )}
 
+            </div>
+
+            {/* Human check before a job spends money. Renders only when the
+                backend has Turnstile configured; otherwise it is a no-op. */}
+            <div className="turnstile-row" style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+              <Turnstile />
             </div>
 
             {/* Deliberately OUTSIDE .urlbar-wrap: that wrapper owns a blurred
