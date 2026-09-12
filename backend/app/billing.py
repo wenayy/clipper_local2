@@ -1,7 +1,7 @@
 """Plans, credit pricing, and metering.
 
-Polar checkout and fulfillment live in `polar_catalog.py` and
-`polar_payments.py`. This module remains the provider-independent source of
+Dodo Payments checkout and fulfillment live in `dodo_catalog.py` and
+`dodo_payments.py`. This module remains the provider-independent source of
 truth for plans, prices, entitlements, balances, and the credit ledger.
 
 Credits are priced PER CLIP DELIVERED, not per minute of source video. This is

@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - 00-namespace.yaml
+  - 01-configmap.yaml
+  - 03-service-accounts.yaml
+  - 10-api.yaml
+  - 11-worker.yaml
+  - 12-frontend.yaml
+  - 20-ingress.yaml
+  - 30-api-hpa.yaml
+  - 40-pdb.yaml
+
+# The populated Secret is applied separately and never committed.
+# 31-worker-keda.yaml is also applied separately after KEDA is installed.
+

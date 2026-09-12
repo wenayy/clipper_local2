@@ -36,7 +36,7 @@ function authHeaders() {
 }
 
 
-export async function submitJob({ url, nClips, mode, burnSubtitles, burnTitle, autoCensor, multilingual, tightenPauses, voice, language, template, captionStyle, ratio, lengthPref, intent, highQuality, advancedModel }) {
+export async function submitJob({ url, nClips, mode, burnSubtitles, burnTitle, autoCensor, multilingual, tightenPauses, voice, language, template, captionStyle, ratio, lengthPref, intent, highQuality, advancedModel, turnstileToken }) {
   const resp = await fetch(`${API_BASE}/jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -58,6 +58,7 @@ export async function submitJob({ url, nClips, mode, burnSubtitles, burnTitle, a
       intent,
       high_quality: highQuality === true,
       advanced_model: advancedModel === true,
+      turnstile_token: turnstileToken || "",
     }),
   });
   if (!resp.ok) throw await readError(resp, "We couldn't start that clip yet.");
@@ -77,10 +78,11 @@ export async function submitJob({ url, nClips, mode, burnSubtitles, burnTitle, a
     body. Deliberately not null for that case: null is the caller's "no upload
     in flight" signal, so reusing it would make the bar disappear mid-upload on
     exactly the connections least able to spare the reassurance. */
-export function uploadJob(file, options, onProgress) {
+export function uploadJob(file, options, onProgress, turnstileToken) {
   const body = new FormData();
   body.append("file", file);
   body.append("options", JSON.stringify(options));
+  if (turnstileToken) body.append("turnstile_token", turnstileToken);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();

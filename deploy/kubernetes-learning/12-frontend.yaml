@@ -1,0 +1,65 @@
+# This assumes a separately built image containing frontend/dist served by
+# Nginx with SPA fallback to /index.html. A CDN/Vercel is usually simpler and
+# cheaper; it is included here to demonstrate same-host Ingress routing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clipper-frontend
+  namespace: clipper
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: clipper-frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clipper-frontend
+        app.kubernetes.io/part-of: klipcut
+    spec:
+      serviceAccountName: clipper-frontend
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: ghcr.io/YOUR_ORG/klipcut-frontend@sha256:IMAGE_DIGEST
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clipper-frontend
+  namespace: clipper
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: clipper-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+

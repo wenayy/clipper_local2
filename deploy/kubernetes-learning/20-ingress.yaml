@@ -1,0 +1,45 @@
+# Requires an ingress-nginx controller. An Ingress object alone does nothing;
+# its controller watches it and configures the real reverse proxy/load balancer.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: clipper
+  namespace: clipper
+  annotations:
+    # Remove this annotation if cert-manager is not installed, or replace the
+    # issuer name with the one configured in the cluster.
+    cert-manager.io/cluster-issuer: letsencrypt-production
+
+    # These annotations are specific to ingress-nginx. The API currently
+    # accepts very large uploads and has synchronous editor exports.
+    nginx.ingress.kubernetes.io/proxy-body-size: "4g"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "1800"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "1800"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - klipcut.example.com
+      secretName: klipcut-tls
+  rules:
+    - host: klipcut.example.com
+      http:
+        paths:
+          # Longest matching path wins. server.py already mounts the backend
+          # under /api, so no rewrite annotation is needed.
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: clipper-api
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: clipper-frontend
+                port:
+                  name: http
+

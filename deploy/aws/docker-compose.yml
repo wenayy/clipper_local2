@@ -1,0 +1,63 @@
+# KlipCut on a single EC2 box: Postgres + API + N workers, one command.
+#
+#   docker compose --env-file .env up -d --build
+#   docker compose up -d --scale worker=2      # add render throughput
+#
+# The API and the worker run the SAME image (built from Dockerfile.backend);
+# only the command and CLIPPER_INLINE_WORKER differ. Postgres is the queue,
+# so both must point at the same database. Video files live in Cloudflare R2
+# (STORAGE_BACKEND=r2), which is what lets the API and the workers see each
+# other's output -- without it the worker renders to a disk the API can't read.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: klipcut
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: klipcut
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U klipcut"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/kubernetes-learning/images/Dockerfile.backend
+    image: klipcut-backend:latest
+    restart: unless-stopped
+    command: uvicorn server:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      # The API must NOT render -- that is the worker's job. Leaving this on
+      # rebuilds the exact problem the queue was introduced to fix.
+      CLIPPER_INLINE_WORKER: "0"
+      DATABASE_URL: postgresql://klipcut:${POSTGRES_PASSWORD}@db:5432/klipcut
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/kubernetes-learning/images/Dockerfile.backend
+    image: klipcut-backend:latest
+    restart: unless-stopped
+    command: python worker.py
+    env_file: .env
+    environment:
+      CLIPPER_INLINE_WORKER: "0"
+      CLIPPER_MAX_CONCURRENT_RENDERS: "1"
+      DATABASE_URL: postgresql://klipcut:${POSTGRES_PASSWORD}@db:5432/klipcut
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

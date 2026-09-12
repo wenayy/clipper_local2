@@ -36,7 +36,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import auth, billing, editing, polar_payments, queue, storage, workspace
+from app import auth, billing, dodo_payments, editing, queue, storage, turnstile, workspace
 from app.db import SessionLocal, get_session, init_db
 from app.jobs import (create_job, expire_due_jobs, get_job, get_job_transcript,
                       list_jobs, update_job)
@@ -44,23 +44,7 @@ from app.models import Clip, FreeEditorExport, Job, Share, User, _iso_utc
 from app.pipeline import (analyzer, caption_emoji, caption_presets, censor,
                           energy, downloader, pacing, reframe, render, scoring,
                           subtitles, transcriber, voiceover)
-from app.polar_catalog import checkout_url as polar_static_checkout_url
-from app.polar_catalog import subscription_product, topup_product
-
-
-def polar_checkout_url(product, user_id: str, email: str) -> str | None:
-    """A checkout URL for this user, best available method first.
-
-    An API-created session is preferred because it can carry `success_url` and
-    `metadata.reference_id`; a static Checkout Link can carry neither reliably,
-    which is why purchases through one left the buyer on Polar's page with no
-    credits granted. The static link stays as the fallback so checkout still
-    works before POLAR_ACCESS_TOKEN is configured.
-    """
-    if not product:
-        return None
-    return (polar_payments.create_checkout_session(product, user_id, email)
-            or polar_static_checkout_url(product, user_id, email))
+from app.dodo_catalog import subscription_product
 
 app = FastAPI(title="Clipper API")
 
@@ -270,6 +254,14 @@ def health():
     }
 
 
+@app.get("/turnstile-site-key")
+def turnstile_site_key():
+    """The frontend needs the site key to render the widget.
+    Returns null when Turnstile is not configured (local dev)."""
+    key = os.environ.get("TURNSTILE_SITE_KEY", "")
+    return {"site_key": key or None, "enabled": turnstile.is_enabled()}
+
+
 @app.get("/templates")
 def list_templates():
     """Lets the UI render the picker from one source of truth."""
@@ -338,6 +330,7 @@ class JobRequest(BaseModel):
     # opt-out surcharge would be a charge nobody chose.
     high_quality: bool = False       # slower preset, lower CRF -- per clip
     advanced_model: bool = False     # the better analysis model -- per job
+    turnstile_token: Optional[str] = None
 
 
 class SourcePreviewRequest(BaseModel):
@@ -580,7 +573,13 @@ class CheckoutRequest(BaseModel):
 
 @app.post("/billing/checkout")
 def checkout(body: CheckoutRequest, user: User = Depends(auth.current_user_required)):
-    """Return a user-bound Polar Checkout Link for a server-priced item."""
+    """Return a user-bound Dodo checkout URL for a server-priced item.
+
+    Subscriptions bill through a fixed per-tier Dodo product; credit top-ups
+    reuse one Pay-What-You-Want product with the exact price passed as `amount`.
+    The price is always taken from billing.py here, never from the request, so a
+    client cannot name its own price.
+    """
     if body.interval not in {"monthly", "yearly"}:
         raise HTTPException(status_code=400, detail="Choose monthly or yearly billing.")
     if body.plan_id:
@@ -601,12 +600,8 @@ def checkout(body: CheckoutRequest, user: User = Depends(auth.current_user_requi
         line_item = {"kind": "plan", "plan_id": plan["id"], "name": plan["name"],
                      "interval": body.interval, "usd": price,
                      "credits": tier["credits"]}
-        try:
-            url = polar_checkout_url(product, user.id, user.email) if product else None
-        except ValueError as exc:
-            print(f"[clipper] Polar checkout configuration error: {exc}")
-            raise HTTPException(status_code=503,
-                                detail="Checkout is temporarily unavailable.") from exc
+        url = (dodo_payments.create_subscription_checkout(product, user.id, user.email)
+               if product else None)
         if not url:
             return {"status": "provider_not_configured",
                     "detail": "Checkout is not available for this option yet.",
@@ -618,13 +613,8 @@ def checkout(body: CheckoutRequest, user: User = Depends(auth.current_user_requi
     if not topup:
         raise HTTPException(status_code=400, detail="Unknown credit pack.")
 
-    product = topup_product(topup["credits"])
-    try:
-        url = polar_checkout_url(product, user.id, user.email) if product else None
-    except ValueError as exc:
-        print(f"[clipper] Polar checkout configuration error: {exc}")
-        raise HTTPException(status_code=503,
-                            detail="Checkout is temporarily unavailable.") from exc
+    url = dodo_payments.create_topup_checkout(
+        topup["credits"], topup["usd"], user.id, user.email)
     line_item = {"kind": "topup", "credits": topup["credits"], "usd": topup["usd"]}
     if not url:
         return {"status": "provider_not_configured",
@@ -636,109 +626,56 @@ def checkout(body: CheckoutRequest, user: User = Depends(auth.current_user_requi
 
 @app.post("/billing/confirm")
 def confirm_checkout(body: dict, user: User = Depends(auth.current_user_required)):
-    """Poll Polar for a completed checkout and fulfill it immediately.
+    """Report whether the buyer's payment has been fulfilled yet.
 
-    The webhook is the primary fulfillment path, but it requires Polar to reach
-    the server -- which fails on localhost and behind firewalls. This endpoint
-    lets the frontend confirm a payment by checkout_id when the user returns
-    from Polar, so credits arrive even without a working webhook.
+    The Dodo webhook is the single source of truth: it verifies the signature
+    and grants credits behind a unique per-charge row. Rather than re-fulfil
+    here (which would risk double-crediting or trusting an unsigned client), this
+    endpoint just tells the frontend whether that grant has landed, by looking
+    for a recent DodoGrant on this user. The frontend polls it a few times after
+    the redirect, so a webhook arriving a second later still resolves to success.
     """
-    checkout_id = (body.get("checkout_id") or "").strip()
-    if not checkout_id:
-        raise HTTPException(status_code=400, detail="Missing checkout_id.")
-
-    client = polar_payments._client()
-    if not client:
-        raise HTTPException(status_code=503, detail="Payment provider not configured.")
-
-    try:
-        checkout = client.checkouts.get(id=checkout_id)
-    except Exception as exc:
-        print(f"[clipper] confirm: could not fetch checkout {checkout_id}: {exc}")
-        raise HTTPException(status_code=502, detail="Could not verify payment.") from exc
-
-    raw_status = getattr(checkout, "status", None)
-    status = raw_status.value if hasattr(raw_status, "value") else str(raw_status)
-    print(f"[clipper] confirm: checkout {checkout_id} raw_status={raw_status!r} resolved={status!r}")
-    if status not in ("succeeded", "confirmed"):
-        print(f"[clipper] confirm: checkout not finalized yet, returning pending")
-        return {"status": "pending", "checkout_status": status}
-
-    product_id = None
-    for item in getattr(checkout, "product_prices", []) or []:
-        pid = getattr(item, "product_id", None) or (item.get("product_id") if isinstance(item, dict) else None)
-        if pid:
-            product_id = pid
-            break
-    if not product_id:
-        product_id = getattr(checkout, "product_id", None)
-    if not product_id:
-        metadata = getattr(checkout, "metadata", {}) or {}
-        if isinstance(metadata, dict):
-            product_id = metadata.get("product_id")
-
-    product = polar_payments.product_by_id(product_id) if product_id else None
-    if not product:
-        print(f"[clipper] confirm: no catalog entry for product_id={product_id!r} "
-              f"(checkout {checkout_id})")
-        raise HTTPException(status_code=400, detail="Unknown product in this checkout.")
+    from app.models import DodoGrant
 
     with SessionLocal() as session:
         db_user = session.get(User, user.id)
         if not db_user:
             raise HTTPException(status_code=404, detail="User not found.")
 
-        from app.models import PolarOrderGrant, CreditLedger
-        existing = (session.query(PolarOrderGrant)
-                    .filter(PolarOrderGrant.order_id == checkout_id).first())
-        if existing:
-            return {"status": "already_applied", "credits": db_user.credits,
+        recent = (session.query(DodoGrant)
+                  .filter(DodoGrant.user_id == db_user.id,
+                          DodoGrant.created_at >= datetime.now(timezone.utc) - timedelta(minutes=30))
+                  .order_by(DodoGrant.created_at.desc())
+                  .first())
+        if not recent:
+            return {"status": "pending", "credits": db_user.credits,
                     "plan": db_user.plan}
-
-        session.add(PolarOrderGrant(
-            order_id=checkout_id, user_id=db_user.id,
-            product_id=product.product_id, credits=product.grant_credits,
-        ))
-        db_user.credits += product.grant_credits
-        note = (f"Polar {product.plan_id.title()} subscription"
-                if product.kind == "subscription"
-                else "Polar credit top-up")
-        session.add(CreditLedger(
-            user_id=db_user.id, delta=product.grant_credits,
-            balance_after=db_user.credits, note=note,
-        ))
-        if product.kind == "subscription":
-            db_user.plan = product.plan_id
-        session.commit()
-
-        print(f"[clipper] confirm: granted {product.grant_credits} credits to "
-              f"{db_user.email} (checkout {checkout_id}, plan={db_user.plan})")
         return {"status": "applied", "credits": db_user.credits,
                 "plan": db_user.plan}
 
 
-@app.post("/billing/polar/webhook", status_code=202)
-async def polar_webhook(request: Request):
-    """Verify Polar's signature, then fulfill paid orders exactly once."""
+@app.post("/billing/dodo/webhook", status_code=202)
+async def dodo_webhook(request: Request):
+    """Verify Dodo's signature, then fulfill paid charges exactly once."""
     body = await request.body()
     try:
-        event = polar_payments.validate_webhook(body, request.headers)
-    except polar_payments.PolarConfigurationError as exc:
-        print(f"[clipper] Polar webhook configuration error: {exc}")
+        event = dodo_payments.validate_webhook(body, request.headers)
+    except dodo_payments.DodoConfigurationError as exc:
+        print(f"[clipper] Dodo webhook configuration error: {exc}")
         raise HTTPException(status_code=503, detail="Payment updates are unavailable.") from exc
     except Exception as exc:
         # Signature failures stay deliberately vague at the public boundary.
-        print(f"[clipper] Rejected Polar webhook: {exc}")
+        print(f"[clipper] Rejected Dodo webhook: {exc}")
         raise HTTPException(status_code=403, detail="Invalid webhook signature.") from exc
 
-    event_id = polar_payments.delivery_id(request.headers, body)
+    event_id = dodo_payments.delivery_id(request.headers, body)
     try:
-        result = polar_payments.handle_event(event, event_id)
-    except polar_payments.PolarConfigurationError as exc:
-        print(f"[clipper] Polar fulfillment error: {exc}")
+        result = dodo_payments.handle_event(event, event_id)
+    except dodo_payments.DodoConfigurationError as exc:
+        print(f"[clipper] Dodo fulfillment error: {exc}")
         raise HTTPException(status_code=503, detail="Payment update needs attention.") from exc
     except Exception as exc:
-        print(f"[clipper] Polar webhook handler crashed: {type(exc).__name__}: {exc}")
+        print(f"[clipper] Dodo webhook handler crashed: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=500, detail="Internal error processing webhook.") from exc
     return {"received": True, **result}
 
@@ -1732,8 +1669,12 @@ def source_preview(body: SourcePreviewRequest):
 
 
 @app.post("/jobs")
-def submit_job(req: JobRequest, background_tasks: BackgroundTasks,
+def submit_job(req: JobRequest, request: Request, background_tasks: BackgroundTasks,
                user: User = Depends(auth.current_user_required)):
+    if not turnstile.verify(req.turnstile_token,
+                            request.client.host if request.client else None):
+        raise HTTPException(status_code=403,
+                            detail="Verification failed. Please refresh the page and try again.")
     gameplay_loops = _prepare_job(req, user)
     # Metadata-only inspection happens before a job is created, so an over-limit
     # link never downloads media or reaches a paid transcription/analysis call.
@@ -1775,10 +1716,15 @@ def _assert_video_file(path: str) -> float:
 
 
 @app.post("/jobs/upload")
-async def submit_uploaded_job(background_tasks: BackgroundTasks,
+async def submit_uploaded_job(request: Request, background_tasks: BackgroundTasks,
                               file: UploadFile = File(...), options: str = Form("{}"),
+                              turnstile_token: str = Form(""),
                               user: User = Depends(auth.current_user_required)):
     """Create a job from a local video without involving a platform downloader."""
+    if not turnstile.verify(turnstile_token,
+                            request.client.host if request.client else None):
+        raise HTTPException(status_code=403,
+                            detail="Verification failed. Please refresh the page and try again.")
     try:
         req = JobRequest(**json.loads(options))
     except (json.JSONDecodeError, TypeError, ValueError) as exc:

@@ -21,6 +21,14 @@ React frontend  ──HTTP──▶  FastAPI backend  ──▶  Pipeline
                users)       renders)     yt-dlp, FFmpeg)
 ```
 
+For a project-specific walkthrough of evolving this design into separate
+workers, Kubernetes autoscaling, and eventually Kafka—including diagrams,
+failure modes, example manifests, and a staged learning path—see
+[`docs/SCALING_KUBERNETES_KAFKA.md`](docs/SCALING_KUBERNETES_KAFKA.md).
+The more detailed Kubernetes walkthrough and split example files are in
+[`docs/KUBERNETES_DEEP_DIVE.md`](docs/KUBERNETES_DEEP_DIVE.md) and
+[`deploy/kubernetes-learning/`](deploy/kubernetes-learning/README.md).
+
 ### Pipeline stages
 
 | Stage | Module | What it does |

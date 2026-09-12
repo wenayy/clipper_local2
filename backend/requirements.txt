@@ -5,7 +5,10 @@ pydantic
 python-multipart
 fonttools
 sqlalchemy
-polar-sdk==0.31.7
+# Billing provider. dodopayments ships checkout_sessions.create (dynamic amount
+# for credit packs) and webhooks.unwrap (Standard Webhooks signature check).
+# The [webhooks] extra pulls in `standardwebhooks`, which unwrap() requires.
+dodopayments[webhooks]>=1.34.0
 
 # Face-aware reframing for the Podcast template (app/pipeline/reframe.py).
 # opencv carries the YuNet detector; the model file itself is an asset rather

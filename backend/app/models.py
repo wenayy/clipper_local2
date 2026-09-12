@@ -185,6 +185,57 @@ class PolarSubscription(Base):
     )
 
 
+# --- Dodo Payments (current billing provider) ------------------------------
+# Mirrors the Polar tables above. Kept separate rather than reused so a delivery
+# ID from one provider can never collide with the other's, and so switching
+# providers is additive instead of a migration of live payment records.
+
+
+class DodoWebhookEvent(Base):
+    """Processed delivery IDs stop Dodo retries from repeating side effects."""
+
+    __tablename__ = "dodo_webhook_events"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class DodoGrant(Base):
+    """One paid Dodo charge can grant credits exactly once.
+
+    Keyed by a per-charge id (a one-time payment_id, or a subscription's charge
+    id) so a webhook redelivery -- or a manual confirm racing the webhook --
+    cannot double-credit an account.
+    """
+
+    __tablename__ = "dodo_grants"
+
+    charge_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    product_id: Mapped[str] = mapped_column(String(255), index=True, default="")
+    credits: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class DodoSubscription(Base):
+    """Tracks which Dodo subscription currently owns a user's paid plan."""
+
+    __tablename__ = "dodo_subscriptions"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    product_id: Mapped[str] = mapped_column(String(255), index=True, default="")
+    # Nullable: a subscription whose Dodo product is not yet pasted into the
+    # catalog still needs a row, and a NOT NULL here would abort the whole
+    # fulfillment transaction (credits included) rather than just this record.
+    plan_id: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+
 class FreeEditorExport(Base):
     """The single edited export included with Free.
 

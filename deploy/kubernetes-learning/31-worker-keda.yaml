@@ -1,0 +1,32 @@
+# OPTIONAL: apply only after installing KEDA. This scales from PostgreSQL queue
+# depth. Keep minReplicaCount=1 until stale-claim reaping is moved out of workers.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: clipper-worker
+  namespace: clipper
+spec:
+  scaleTargetRef:
+    name: clipper-worker
+  pollingInterval: 15
+  cooldownPeriod: 600
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 600
+  triggers:
+    - type: postgresql
+      metadata:
+        connectionFromEnv: DATABASE_URL
+        query: >-
+          SELECT count(*) FROM job_queue
+          WHERE claimed_at IS NULL AND available_at <= now()
+        targetQueryValue: "2"
+        activationTargetQueryValue: "0"
+

@@ -8,6 +8,7 @@ import { fetchMe, logout, createShare, API_BASE } from "./api";
 import ThemeToggle, { useTheme } from "./ThemeToggle";
 import { useToast } from "./Toast";
 import StudioWizard from "./StudioWizard";
+import useTurnstile from "./useTurnstile";
 import UpgradeModal from "./UpgradeModal";
 import WelcomeUpgrade, { PaymentProcessing } from "./WelcomeUpgrade";
 import { usePlan } from "./usePlan";
@@ -549,6 +550,7 @@ export default function App() {
   const [studioOpen, setStudioOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef(null);
+  const { getToken: getTurnstileToken } = useTurnstile();
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -648,9 +650,12 @@ export default function App() {
     }
 
     async function boot() {
-      if (returningFromPayment && checkoutId) {
+      if (returningFromPayment) {
         setPaymentStatus("processing");
 
+        // Dodo redirects back with ?payment=success but no checkout_id; the
+        // webhook does the granting, and confirm just waits for it to land, so
+        // we no longer depend on a provider-specific id being present.
         let result = null;
         try { result = await confirmWithRetry(checkoutId); }
         catch { /* confirm failed entirely */ }
@@ -888,6 +893,7 @@ export default function App() {
     setJob(null);
     setStartedAt(Date.now());
     try {
+      const turnstileToken = await getTurnstileToken();
       const options = {
         nClips,
         mode: "original",
@@ -927,8 +933,8 @@ export default function App() {
             intent: options.intent,
             high_quality: options.highQuality,
             advanced_model: options.advancedModel,
-          }, setUploadPct)
-        : await submitJob({ url: url.trim(), ...options });
+          }, setUploadPct, turnstileToken)
+        : await submitJob({ url: url.trim(), ...options, turnstileToken });
       const { job_id } = result;
       const fresh = await getJob(job_id);
       setJob(fresh);

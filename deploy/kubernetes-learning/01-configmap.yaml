@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clipper-config
+  namespace: clipper
+data:
+  # Production API pods must never run FFmpeg jobs themselves.
+  CLIPPER_INLINE_WORKER: "0"
+  STORAGE_BACKEND: "r2"
+
+  # Public/cross-origin behavior. With the included same-host Ingress the
+  # frontend normally calls /api without CORS, but this also permits the host.
+  CLIPPER_APP_ORIGIN: "https://klipcut.example.com"
+  CLIPPER_CORS_ORIGINS: "https://klipcut.example.com"
+
+  # Object-storage identity is configuration; credentials are in the Secret.
+  R2_BUCKET: "klipcut-production"
+  R2_ENDPOINT: "https://ACCOUNT_ID.r2.cloudflarestorage.com"
+
+  # One application job per worker pod. Within a job this conservative value
+  # runs one FFmpeg encode at a time on the requested 2 vCPU.
+  CLIPPER_MAX_CONCURRENT_RENDERS: "1"
+  CLIPPER_PARALLEL_RENDERS: "1"
+  CLIPPER_FFMPEG_THREADS: "2"
+  CLIPPER_NO_HW_ENCODE: "1"
+
+  CLIPPER_WORKER_IDLE: "2"
+  CLIPPER_STALE_CLAIM_MINUTES: "45"
+  CLIPPER_MAX_ATTEMPTS: "3"
+  CLIPPER_MAX_UPLOAD_BYTES: "4294967296"
+  CLIPPER_EXPORT_SLOT_WAIT: "20"
+  CLIPPER_RETENTION_HOURS: "720"
+
+  # Replace with model IDs supported by the configured provider/account.
+  CLIPPER_MODEL_STANDARD: "gpt-4.1-mini"
+  CLIPPER_MODEL_ADVANCED: "gpt-4.1"
+  CLIPPER_PASSES: "3"
+  POLAR_SERVER: "production"
+
+  # Container behavior.
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+

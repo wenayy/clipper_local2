@@ -1,0 +1,30 @@
+# Build from the repository root:
+# docker build -f deploy/kubernetes-learning/images/Dockerfile.backend -t klipcut-backend:dev .
+FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Dependency layer changes less often than application code.
+COPY backend/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY backend/ /app/
+
+# The Kubernetes pod mounts writable emptyDir volumes on /app/storage and /tmp.
+# Keeping the image process non-root limits the effect of an application escape.
+RUN groupadd --gid 10001 clipper \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin clipper \
+    && mkdir -p /app/storage \
+    && chown -R 10001:10001 /app
+
+USER 10001:10001
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8000
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
+
