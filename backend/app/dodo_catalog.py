@@ -61,7 +61,7 @@ def _subscription(plan: str, credits: int, interval: str,
 # than charging the wrong price. Top-ups need NO entry here -- they are dynamic.
 SUBSCRIPTIONS = (
     #                            price to set on the Dodo product
-    _subscription("creator", 500, "monthly",  product_id=""),   # $12 / mo
+    _subscription("creator", 500, "monthly",  product_id="pdt_0NnTTeprrcG4xP8suv8IR"),   # $12 / mo (500 credits, LIVE)
     _subscription("creator", 500, "yearly",   product_id=""),   # $120 / yr
     _subscription("creator", 1000, "monthly", product_id="pdt_0NnTRYnbamySwNiQjYawb"),   # $19 / mo  (1000 credits, LIVE)
     _subscription("creator", 1000, "yearly",  product_id="pdt_0NnTREsU0FXvNK5Fbe1Cx"),   # $180 / yr (1000 credits, LIVE)
