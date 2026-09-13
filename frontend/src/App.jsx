@@ -1305,6 +1305,16 @@ export default function App() {
                   title: "Links and uploads",
                   body: "Start from a supported public link or upload your own video file.",
                 },
+                {
+                  icon: "◆",
+                  title: "Keep your brand on every clip",
+                  body: "Add your logo, handle and colors once and KlipCut carries them across every clip it makes.",
+                },
+                {
+                  icon: "⚑",
+                  title: "Multilingual captions",
+                  body: "Auto-detect the spoken language and generate accurate captions, even when it switches mid-video.",
+                },
               ].map((f, i) => (
                 <SpotlightCard className="feature-card reveal" key={f.title} style={{ transitionDelay: `${(i % 3) * 80}ms` }}>
                   <span className="feature-icon" aria-hidden="true">{f.icon}</span>
@@ -1313,6 +1323,67 @@ export default function App() {
                 </SpotlightCard>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* ---------- Comparison ---------- */}
+        <section className="container" id="compare">
+          <div className="section-head reveal">
+            <span className="section-eyebrow lime">How we compare</span>
+            <h2 className="section-title light">
+              The same clips,
+              <br />
+              <em className="serif">on your terms.</em>
+            </h2>
+          </div>
+          <div className="reveal" style={{ overflowX: "auto" }}>
+            <table style={{
+              width: "100%", borderCollapse: "collapse", minWidth: "520px",
+              fontSize: "15px", color: "rgba(255,255,255,0.86)",
+            }}>
+              <thead>
+                <tr>
+                  {["", "KlipCut", "OpusClip", "Vizard.ai"].map((h, i) => (
+                    <th key={h || "feat"} style={{
+                      textAlign: i === 0 ? "left" : "center", padding: "14px 16px",
+                      fontWeight: 600,
+                      color: i === 1 ? "#a78bfa" : "rgba(255,255,255,0.6)",
+                      borderBottom: "1px solid rgba(255,255,255,0.12)",
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  ["Pay only for clips you keep (per-clip credits)", true, false, false],
+                  ["Buy any amount — no forced monthly plan", true, false, false],
+                  ["Full editor before export (trim, captions, logo)", true, true, false],
+                  ["Multilingual captions, auto-detected", true, true, true],
+                  ["Vertical, square & wide layouts", true, true, true],
+                  ["Upload your own file or paste a link", true, true, true],
+                ].map((row, r) => (
+                  <tr key={r}>
+                    {row.map((cell, c) => (
+                      <td key={c} style={{
+                        textAlign: c === 0 ? "left" : "center", padding: "14px 16px",
+                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                        color: c === 0 ? "rgba(255,255,255,0.8)" : "inherit",
+                        background: c === 1 ? "rgba(167,139,250,0.06)" : "transparent",
+                      }}>
+                        {c === 0 ? cell : (cell
+                          ? <span style={{ color: "#4ade80", fontWeight: 700 }}>✓</span>
+                          : <span style={{ color: "rgba(255,255,255,0.25)" }}>—</span>)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p style={{
+              marginTop: "14px", fontSize: "13px", color: "rgba(255,255,255,0.45)",
+            }}>
+              Comparison based on publicly listed features as of 2026. Names belong to their owners.
+            </p>
           </div>
         </section>
 
